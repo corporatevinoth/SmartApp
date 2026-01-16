@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NumScan - AI Phone Scanner</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            dark: '#0f172a',
+                            light: '#1e293b',
+                            accent: '#3b82f6',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Tesseract.js -->
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-brand-dark h-screen w-screen overflow-hidden text-white select-none">
+
+    <!-- App Container -->
+    <div class="relative h-full w-full flex flex-col">
+        
+        <!-- Top Bar -->
+        <div class="absolute top-0 left-0 right-0 z-20 flex justify-between items-center p-6 pt-8 bg-gradient-to-b from-black/60 to-transparent">
+            <div class="flex items-center gap-2">
+                <i data-lucide="scan-line" class="text-brand-accent w-6 h-6"></i>
+                <span class="font-bold text-xl tracking-wide">NumScan</span>
+            </div>
+            <!-- Flashlight Toggle (Optional: only works if supported) -->
+            <button id="flash-toggle" class="p-2 rounded-full bg-white/10 backdrop-blur-md active:bg-white/20 transition hidden">
+                <i data-lucide="zap" class="w-5 h-5 text-yellow-400"></i>
+            </button>
+        </div>
+
+        <!-- Camera View -->
+        <div class="relative flex-1 bg-black overflow-hidden">
+            <video id="camera-feed" class="absolute inset-0 w-full h-full object-cover" autoplay playsinline muted></video>
+            
+            <!-- Focus Overlay -->
+            <div class="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                <div class="relative w-72 h-40 rounded-xl border-2 border-white/50 bg-transparent shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+                    <!-- Corner Markers -->
+                    <div class="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-brand-accent rounded-tl-lg"></div>
+                    <div class="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-brand-accent rounded-tr-lg"></div>
+                    <div class="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-brand-accent rounded-bl-lg"></div>
+                    <div class="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-brand-accent rounded-br-lg"></div>
+                    
+                    <!-- Scan Animation -->
+                    <div id="scan-line" class="scan-line hidden"></div>
+                    
+                    <!-- Helper Text -->
+                    <div class="absolute -bottom-12 left-0 right-0 text-center">
+                        <p class="text-white/80 text-sm font-medium bg-black/40 px-3 py-1 rounded-full inline-block backdrop-blur-sm">
+                            Align number in box
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Canvas for capturing (Hidden) -->
+            <canvas id="capture-canvas" class="hidden"></canvas>
+        </div>
+
+        <!-- Bottom Controls -->
+        <div class="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/90 via-black/50 to-transparent pb-10 pt-20 px-6">
+            <div class="flex justify-between items-center max-w-sm mx-auto">
+                <!-- Gallery Button -->
+                <button id="gallery-btn" class="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center active:bg-white/20 transition">
+                    <i data-lucide="image" class="w-6 h-6 text-white"></i>
+                </button>
+                <input type="file" id="file-input" accept="image/*" class="hidden">
+
+                <!-- Shutter Button -->
+                <button id="shutter-btn" class="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center relative group transition-transform active:scale-95">
+                    <div class="w-16 h-16 rounded-full bg-white group-active:bg-brand-accent transition-colors"></div>
+                </button>
+
+                <!-- History/Settings (Placeholder for symmetry) -->
+                <button class="w-12 h-12 rounded-full bg-transparent flex items-center justify-center">
+                    <!-- Empty for balance or future feature -->
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loading-overlay" class="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center hidden">
+            <div class="w-12 h-12 border-4 border-brand-accent border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p class="text-brand-accent font-medium tracking-wide animate-pulse">Processing...</p>
+        </div>
+
+        <!-- Results Drawer (Bottom Sheet) -->
+        <div id="results-drawer" class="absolute inset-x-0 bottom-0 z-40 bg-brand-light rounded-t-3xl transform translate-y-full transition-transform duration-300 ease-in-out max-h-[70vh] flex flex-col shadow-2xl shadow-black">
+            <!-- Handle -->
+            <div class="w-full flex justify-center pt-3 pb-1" id="drawer-handle">
+                <div class="w-12 h-1.5 bg-white/20 rounded-full"></div>
+            </div>
+            
+            <!-- Header -->
+            <div class="px-6 py-4 border-b border-white/10 flex justify-between items-center">
+                <h2 class="text-xl font-bold flex items-center gap-2">
+                    <i data-lucide="phone" class="text-brand-accent w-5 h-5"></i>
+                    Detected Numbers
+                </h2>
+                <button id="close-drawer" class="p-2 rounded-full hover:bg-white/10 transition">
+                    <i data-lucide="x" class="w-5 h-5 text-gray-400"></i>
+                </button>
+            </div>
+
+            <!-- Content -->
+            <div id="results-content" class="p-6 overflow-y-auto no-scrollbar space-y-4">
+                <!-- Dynamic Results will go here -->
+                <p class="text-center text-gray-400 italic">No numbers found.</p>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- App Logic -->
+    <script src="app.js"></script>
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>
